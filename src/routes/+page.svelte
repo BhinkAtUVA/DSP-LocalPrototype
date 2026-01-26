@@ -5,9 +5,18 @@
     import Landing from "$lib/components/pseudopages/Landing.svelte";
     import Preferences from "$lib/components/pseudopages/Preferences.svelte";
     import Proposals from "$lib/components/pseudopages/Proposals.svelte";
+    import type { ModelInsight } from "$lib/optimizer.svelte";
 
-    let optionAmount: number = $state(3)
-
+    let optionAmount: number = $state(1)
+    let optimizationResult: Promise<Response> = $state(new Promise((resolve, reject) => resolve(new Response())))
+    let modelInsight: ModelInsight = $state({
+        ids: {},
+        costs: {},
+        hours: {},
+        kms: {},
+        overshoot: 0,
+        baseFee: 0
+    });
 </script>
 
 {#snippet landing(next: () => void)}
@@ -17,13 +26,13 @@
     <Cooperative {next}></Cooperative>
 {/snippet}
 {#snippet preferences(next: () => void)}
-    <Preferences {next} bind:options={optionAmount}></Preferences>
+    <Preferences {next} bind:options={optionAmount} bind:result={optimizationResult}></Preferences>
 {/snippet}
 {#snippet proposals(next: () => void)}
-    <Proposals {next} options={optionAmount}></Proposals>
+    <Proposals {next} options={optionAmount} result={optimizationResult} bind:modelInsight></Proposals>
 {/snippet}
 {#snippet details(next: () => void)}
-    <Details {next}></Details>
+    <Details {next} insight={modelInsight}></Details>
 {/snippet}
 
 

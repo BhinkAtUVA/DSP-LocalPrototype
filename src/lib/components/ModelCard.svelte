@@ -1,8 +1,10 @@
 <script lang="ts">
   import { Button } from "./ui/button";
 
-    let { mainprice, discounts, characteristics, onclick }: {
-        mainprice: number,
+    let { hourprice, kmprice, baseprice, discounts, characteristics, onclick }: {
+        hourprice: number,
+        kmprice: number,
+        baseprice: number,
         discounts: {
             description: string,
             amount: number
@@ -17,7 +19,9 @@
 
 <div class="bg-stone-200 px-6 py-8 rounded-2xl">
     <h3 class="font-bold text-sm uppercase">Price</h3>
-    <p><span class="3xl">{mainprice} €</span> per hour</p>
+    <p><span class="3xl">{hourprice.toFixed(2)} €</span> per hour</p>
+    <p><span class="3xl">{kmprice.toFixed(2)} €</span> per kilometer</p>
+    <p><span class="3xl">{baseprice.toFixed(2)} €</span> membership fee</p>
     <h3 class="mt-4 font-bold text-sm uppercase">Discounts</h3>
     <div class="grid grid-cols-[2fr_1fr] gap-x-4 gap-y-2">
         {#each discounts as d}

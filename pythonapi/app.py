@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, Response, request, jsonify
 from optimizer_rovshan import optimize_pricing
 from RideSimulator import RideSimulator
 import pandas as pd
@@ -34,12 +34,25 @@ bounds = {
     "heavy_discount_pct": (0.0, 0.40),
 }
 
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = Response()
+        response.headers.add("X-Content-Type-Options", "*")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response
+
 @app.get("/month")
-def get_test():
+def optimize_month():
+    weights["heavy"] = 0 if "heavy" not in request.args else float(request.args["heavy"])
+    weights["proportionality"] = 0 if "proportionality" not in request.args else float(request.args["proportionality"])
+    weights["overall"] = 0.2 if "overall" not in request.args else float(request.args["overall"])
     summary, costs, gaps = optimize_pricing(rides, weights, bounds)
     summary["success"] = bool(summary["success"])
     gap_list = []
     for key in gaps:
         gap_list.append({ "Cooperative": key[0], "Month": key[1], "Profit": gaps[key] })
     print(gap_list)
-    return jsonify({ "summary": summary, "costs": costs.to_dict(), "gaps": gap_list }), 200
+    response = jsonify({ "summary": summary, "costs": costs.to_dict(), "gaps": gap_list })
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response, 200
