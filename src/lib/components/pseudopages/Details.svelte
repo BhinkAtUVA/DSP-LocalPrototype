@@ -5,17 +5,8 @@
     let { next, insight }: { next: () => void, insight: ModelInsight } = $props()
 
     let hhIds = []
-    let idToIdx: (number | undefined)[] = []
-    for (let i = 0; i < 12; i++) {
-        let result = undefined
-        for (let key in insight.ids) {
-            if (insight.ids[key] == i) {
-                result = parseInt(key)
-                break
-            }
-        }
+    for (let i = 0; i < 18; i++) {
         hhIds.push(i)
-        idToIdx.push(result)
     }
 
 </script>
@@ -25,14 +16,14 @@
         <div class="text-center text-2xl mb-4">Financial insight</div>
         <div class="grid grid-cols-[auto_1fr] gap-y-1 gap-x-4">
             <p>Monthly membership fee:</p><p class="text-right">{insight.baseFee.toFixed(2)} €</p>
-            <p>Maximum simulated monthly overshoot (revenue - costs):</p><p class="text-right">{insight.overshoot.toFixed(2)} €</p>
+            <p>Maximum simulated monthly overshoot (revenue - costs):</p><p class="text-right">{Array.from(Object.values(insight.overshoots)).reduce((prev, curr) => Math.max(prev, curr)).toFixed(2)} €</p>
         </div>
     </div>
     <div>
         <div class="text-center text-2xl">Mean Monthly Costs by Household</div>
         <Plot grid x={{ label: "Household ID" }} y={{ label: "Monthly Cost (€)" }}>
             <BarY data={
-                hhIds.map(id => idToIdx[id] ? insight.costs[idToIdx[id]] : insight.baseFee)
+                hhIds.map(id => Math.max(insight.costsMean[id], 25))
             }></BarY>
         </Plot>
     </div>
@@ -40,7 +31,7 @@
         <div class="text-center text-2xl">Mean Monthly Driven Hours by Household</div>
         <Plot grid x={{ label: "Household ID" }} y={{ label: "Monthly Driven Hours" }}>
             <BarY data={
-                hhIds.map(id => idToIdx[id] ? insight.hours[idToIdx[id]] : 0)
+                hhIds.map(id => insight.hoursMean[id])
             }></BarY>
         </Plot>
     </div>
@@ -48,7 +39,7 @@
         <div class="text-center text-2xl">Mean Monthly Driven Kilometers by Household</div>
         <Plot grid x={{ label: "Household ID" }} y={{ label: "Monthly Driven Kilometers" }}>
             <BarY data={
-                hhIds.map(id => idToIdx[id] ? insight.kms[idToIdx[id]] : 0)
+                hhIds.map(id => insight.kmsMean[id])
             }></BarY>
         </Plot>
     </div>

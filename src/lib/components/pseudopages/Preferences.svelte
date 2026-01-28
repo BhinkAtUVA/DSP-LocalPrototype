@@ -5,7 +5,7 @@
     import * as Select from '../ui/select';
     import { clearResult, optimize } from '$lib/optimizer.svelte';
 
-    let { next, options = $bindable(), result = $bindable() }: { next: () => void, options: number, result: Promise<Response> } = $props()
+    let { next, options = $bindable(), discounts = $bindable(2), result = $bindable() }: { next: () => void, options: number, discounts: number, result: Promise<Response> } = $props()
 
     const objectiveOptions = [{
         value: "heavy",
@@ -20,10 +20,17 @@
 
 <div class="container max-w-300 mx-auto px-4">
     <div class="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-y-2 gap-x-6">
-        <!-- <p>How many pricing model options would you like to generate?</p>
+        <p>How many pricing model options would you like to generate?</p>
         <Input type="number" bind:value={options}></Input>
         <p>How many discounts should the options have at max?</p>
-        <Input type="number"></Input> -->
+        <Select.Root type="single" onValueChange={(v) => discounts = parseInt(v)}>
+            <Select.Trigger class="w-130">{discounts}</Select.Trigger>
+            <Select.Content>
+                <Select.Item value={"0"} label={"0"}>0</Select.Item>
+                <Select.Item value={"1"} label={"1"}>1</Select.Item>
+                <Select.Item value={"2"} label={"2"}>2</Select.Item>
+            </Select.Content>
+        </Select.Root>
         <p>What should your new pricing model achieve for the members?</p>
         <Select.Root type="single" bind:value={objectiveValue}>
             <Select.Trigger class="w-130">{triggerContent}</Select.Trigger>

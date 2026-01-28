@@ -3,7 +3,7 @@
     import ModelCard from '../ModelCard.svelte';
     import Spinner from '../ui/spinner/spinner.svelte';
 
-    let { next, options, result, modelInsight = $bindable() }: { next: () => void, options: number, result: Promise<Response>, modelInsight: ModelInsight } = $props()
+    let { next, options, discounts, modelInsights = $bindable(), selectedModel = $bindable() }: { next: () => void, options: number, discounts: number, modelInsights: ModelInsight[], selectedModel: number } = $props()
 
     const loadingPhrases = ["Simulating rides", "Reviewing cooperative information", "Testing discounts", "Analyzing costs"]
     let phraseIndex = $state(0)
@@ -13,18 +13,10 @@
         if (phraseIndex >= loadingPhrases.length) phraseIndex = 0
     }
     
-    let heavy
-    let prop
-    let heavyScore = $state(0)
-    let propScore = $state(0)
-
-    let hourPrice = $state(0)
-    let kmPrice = $state(0)
-    let heavyDiscount = $state(0)
-    let heavyHours = $state(0)
+    let summaryData: any[] = $state([])
     
     let cycleHandle: number | undefined
-    let data: any = {}
+    let data: any[] = []
     $effect(() => {
         if (!optimizationInfo.hasResult) {
             cycleHandle = setInterval(cyclePhrase, 2000)
@@ -33,25 +25,90 @@
             if (cycleHandle == undefined) return
             clearInterval(cycleHandle)
             cycleHandle = undefined
-            data = optimizationInfo.currentResult
-            modelInsight = {
-                ids: data.costs.ID_hh,
-                costs: data.costs.cost,
-                hours: data.costs.hours,
-                kms: data.costs.km,
-                overshoot: data.gaps[0].Profit,
-                baseFee: data.summary.fixed_monthly_fee_per_household
+            data = (optimizationInfo.currentResult as any[])
+                .filter(r => r.summary.model_variant == "BASE" || (r.summary.model_variant as string).split("_").length <= discounts)
+                .filter((r, i, arr) => {
+                    let rparams = r.summary.params
+                    for(let j = 0; j < arr.length; j++) {
+                        let sparams = arr[j].summary.params
+                        let equal = true
+                        for(let key in rparams) {
+                            if (key.includes("pct")) {
+                                if (Math.round(rparams[key] * 100) != Math.round(sparams[key] * 100)) {
+                                    equal = false
+                                    break
+                                }
+                                continue
+                            }
+                            if (key.includes("hours")) {
+                                if (Math.round(rparams[key]) != Math.round(sparams[key])) {
+                                    equal = false
+                                    break
+                                }
+                                continue
+                            }
+                            if (rparams[key].toFixed(2) != sparams[key].toFixed(2)) {
+                                equal = false
+                                break
+                            }
+                        }
+                        if (equal) {
+                            if (i == j) return true
+                            return false
+                        }
+                    }
+                    return false
+                })
+                .sort((a, b) => a.summary.objective_value - b.summary.objective_value)
+                .slice(0, options)
+            let ids = []
+            for(let i = 0; i < 12; i++) {
+                ids.push(i)
             }
+            modelInsights = []
+            summaryData = []
+            data.forEach((modelResult, i) => {
+                modelInsights.push({
+                    ids: ids,
+                    costsMean: modelResult.costsMean.cost,
+                    hoursMean: modelResult.costsMean.hours,
+                    kmsMean: modelResult.costsMean.km,
+                    costsCIHalf: modelResult.costsCIHalf.cost,
+                    hoursCIHalf: modelResult.costsCIHalf.hours,
+                    kmsCIHalf: modelResult.costsCIHalf.km,
+                    overshoots: modelResult.gaps.map((g: any) => g.Profit),
+                    baseFee: 25
+                })
+                
+                let heavy = modelResult.summary.obj_heavy
+                let prop = modelResult.summary.obj_proportionality
+                let csummaryData: any = {
+                    heavyScore: Number(heavy < 1) + Number(heavy < 0.5) + Number(heavy < 0.1) + Number(heavy < 0.05) + Number(heavy < 0.01),
+                    propScore: Number(prop < 1) + Number(prop < 0.5) + Number(prop < 0.1) + Number(prop < 0.05) + Number(prop < 0.01),
 
-            heavy = data.summary.heavy_obj
-            prop = data.summary.proportionality_obj
-            heavyScore = Number(heavy < 1) + Number(heavy < 0.5) + Number(heavy < 0.1) + Number(heavy < 0.05) + Number(heavy < 0.01)
-            propScore = Number(prop < 1) + Number(prop < 0.5) + Number(prop < 0.1) + Number(prop < 0.05) + Number(prop < 0.01)
-
-            hourPrice = data.summary.params.hour_rate
-            kmPrice = data.summary.params.km_rate
-            heavyDiscount = Math.round(data.summary.params.heavy_discount_pct * 100)
-            heavyHours = Math.round(data.summary.params.heavy_threshold_hours)
+                    hourPrice: modelResult.summary.params.hour_rate,
+                    kmPrice: modelResult.summary.params.km_rate,
+                    baseFee: 25,
+                    heavyDiscount: Math.round(modelResult.summary.params.heavy_discount_pct * 100),
+                    heavyHours: Math.round(modelResult.summary.params.heavy_threshold_hours),
+                    offpeakDiscount: Math.round(modelResult.summary.params.offpeak_discount_pct * 100),
+                    weekendDiscount: Math.round(modelResult.summary.params.weekend_discount_pct * 100),
+                    discounts: []
+                }
+                if (csummaryData.heavyDiscount > 0) csummaryData.discounts.push({
+                    description: "Monthly hours > " + csummaryData.heavyHours.toString(),
+                    amount: csummaryData.heavyDiscount
+                })
+                if (csummaryData.offpeakDiscount > 0) csummaryData.discounts.push({
+                    description: "Driving between 9am and 4pm or after 6:30pm",
+                    amount: csummaryData.offpeakDiscount
+                })
+                if (csummaryData.weekendDiscount > 0) csummaryData.discounts.push({
+                    description: "Driving on the weekend",
+                    amount: csummaryData.weekendDiscount
+                })
+                summaryData.push(csummaryData)
+            })
         }
     })
 </script>
@@ -63,17 +120,17 @@
     </div>
 {:else}
     <div class="mx-auto max-w-300 px-4 grid gap-4 grid-cols-1 md:grid-cols-3">
-        {#each { length: options }}
-            <ModelCard hourprice={hourPrice} kmprice={kmPrice} baseprice={modelInsight.baseFee} discounts={[{
-                description: "Monthly Hours > " + heavyHours.toString(),
-                amount: heavyDiscount
-            }]} characteristics={[{
+        {#each summaryData as d, i}
+            <ModelCard hourprice={d.hourPrice} kmprice={d.kmPrice} baseprice={d.baseFee} discounts={d.discounts} characteristics={[{
                 label: "Heavy user friendly",
-                score: heavyScore
+                score: d.heavyScore
             }, {
                 label: "Proportional to usage",
-                score: propScore
-            }]} onclick={next}></ModelCard>
+                score: d.propScore
+            }]} onclick={() => {
+                selectedModel = i
+                next()
+            }}></ModelCard>
         {/each}
     </div>
 {/if}

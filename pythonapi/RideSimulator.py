@@ -1,48 +1,49 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import warnings
+from scipy.special import erfinv
 
 MultinomialGaussianParams = tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+BetaParams = tuple[float, float, float, float]
 
 class RideSimulator:
     start_time_params: MultinomialGaussianParams
     start_time_cdf: list[float]
-    duration_lambda: float
-    distance_lambda: float
+    duration_mu: float
+    duration_sigma: float
+    distance_mu: float    # <--- NEW
+    distance_sigma: float # <--- NEW
     r_duration_distance: float
-    rides_per_weekday: float
-    rides_per_weekend_day: float
+    rides_wd_beta: BetaParams
+    rides_we_beta: BetaParams
     generator: np.random.Generator
 
-    def __init__(self, start_time_params: MultinomialGaussianParams, duration_lambda: float, distance_lambda: float, r_duration_distance: float, rides_per_weekday: float, rides_per_weekend_day: float):
-        self.start_time_params = start_time_params
+    def __init__(self, 
+                 start_time_params: MultinomialGaussianParams, 
+                 duration_mu: float, 
+                 duration_sigma: float, 
+                 distance_mu: float,    # <--- NEW
+                 distance_sigma: float, # <--- NEW
+                 r_duration_distance: float, 
+                 rides_wd_beta: BetaParams, 
+                 rides_we_beta: BetaParams):
+        
         self.start_time_cdf = self.__build_trinomial_gaussian_cdf(start_time_params)
-        self.duration_lambda = duration_lambda
-        self.distance_lambda = distance_lambda
+        self.duration_mu = duration_mu
+        self.duration_sigma = duration_sigma
+        self.distance_mu = distance_mu       # <--- NEW
+        self.distance_sigma = distance_sigma # <--- NEW
         self.r_duration_distance = r_duration_distance
-        self.rides_per_weekday = rides_per_weekday
-        self.rides_per_weekend_day = rides_per_weekend_day
+        self.rides_wd_beta = rides_wd_beta
+        self.rides_we_beta = rides_we_beta
         self.generator = np.random.Generator(np.random.PCG64(42))
-
-    def to_json(self) -> dict:
-        return {
-            "start_time": self.start_time_params,
-            "duration_lambda": self.duration_lambda,
-            "distance_lambda": self.distance_lambda,
-            "r_duration_distance": self.r_duration_distance,
-            "rides_per_weekday": self.rides_per_weekday,
-            "rides_per_weekend_day": self.rides_per_weekend_day
-        }
-    
-    @classmethod
-    def from_json(cls, json_obj: dict):
-        return cls(json_obj["start_time"], json_obj["duration_lambda"], json_obj["distance_lambda"], json_obj["r_duration_distance"], json_obj["rides_per_weekday"], json_obj["rides_per_weekend_day"])
 
     def set_seed(self, random_state: int):
         self.generator = np.random.Generator(np.random.PCG64(random_state))
 
     def __build_trinomial_gaussian_cdf(self, params: MultinomialGaussianParams) -> list[float]:
-        gaussian_pdf = lambda x: np.sum([params[i][0] / (np.sqrt(2 * np.pi * params[i][2] ** 2)) * np.exp(-((x - params[i][1]) ** 2)/(2 * params[i][2] ** 2)) for i in range(3)])
+        gaussian_pdf = lambda x: np.sum([params[i][0] / (np.sqrt(2 * np.pi) * params[i][2]) * np.exp(-((x - params[i][1]) ** 2)/(2 * params[i][2] ** 2)) for i in range(3)])
         xs = np.linspace(3, 27, 1000)
         numeric_cdf: list[float] = []
         current = 0
@@ -53,11 +54,13 @@ class RideSimulator:
                 numeric_cdf.append(current)
                 continue
             density = gaussian_pdf(x)
+
             current += dx * density
             if(current > 1):
                 warnings.warn("Numeric sampling of multinomial gaussian exceeded probability of 1")
                 current = 1
             numeric_cdf.append(current)
+            cx = x
         return numeric_cdf
     
     def __reverse_trinomial_cdf(self, u: float) -> float:
@@ -83,25 +86,40 @@ class RideSimulator:
         frac = cidx / 1000 * 24 + 3
         return frac % 24
 
-    def __reverse_exponential_cdf(self, lambd: float, u: float) -> float:
-        return -np.log(1 - u) / lambd
+    def __reverse_lognormal_cdf(self, mu: float, sigma: float, u: float) -> float:
+        u = np.clip(u, 1e-9, 1 - 1e-9)
+        return np.exp(mu + sigma * np.sqrt(2) * erfinv(2 * u - 1))
 
     def simulate_month(self, weekdays: int, weekend_days: int) -> pd.DataFrame:
-        weekrides = int(np.round(weekdays * self.rides_per_weekday))
-        weekendrides = int(np.round(weekend_days * self.rides_per_weekend_day))
-        ridelist = pd.DataFrame(index=np.arange(weekrides + weekendrides), columns=["StartHour", "hours", "km", "weekday_flag", "weekend_flag"])
+        wd_alpha, wd_beta, wd_min, wd_max = self.rides_wd_beta
+        we_alpha, we_beta, we_min, we_max = self.rides_we_beta
+
+        rate_wd = self.generator.beta(wd_alpha, wd_beta) * (wd_max - wd_min) + wd_min
+        rate_we = self.generator.beta(we_alpha, we_beta) * (we_max - we_min) + we_min
+
+        weekrides = int(np.round(weekdays * rate_wd))
+        weekendrides = int(np.round(weekend_days * rate_we))
+        
+        ridelist = pd.DataFrame(index=np.arange(weekrides + weekendrides), columns=["start_hour", "hours", "km", "is_weekend_ride"])
+        
         for i in range(weekrides):
             sh = self.__reverse_trinomial_cdf(self.generator.uniform())
             u_duration = self.generator.uniform()
             u_distance = u_duration * self.r_duration_distance + self.generator.uniform() * (1 - self.r_duration_distance)
-            dur = self.__reverse_exponential_cdf(self.duration_lambda, u_duration)
-            dis = self.__reverse_exponential_cdf(self.distance_lambda, u_distance)
-            ridelist.loc[i] = [sh, dur, dis, 1, 0]
+            
+            dur = self.__reverse_lognormal_cdf(self.duration_mu, self.duration_sigma, u_duration)
+            dis = self.__reverse_lognormal_cdf(self.distance_mu, self.distance_sigma, u_distance) # <--- CHANGED
+            
+            ridelist.loc[i] = [sh, dur, dis, 0]
+            
         for i in range(weekendrides):
             sh = self.__reverse_trinomial_cdf(self.generator.uniform())
             u_duration = self.generator.uniform()
             u_distance = u_duration * self.r_duration_distance + self.generator.uniform() * (1 - self.r_duration_distance)
-            dur = self.__reverse_exponential_cdf(self.duration_lambda, u_duration)
-            dis = self.__reverse_exponential_cdf(self.distance_lambda, u_distance)
-            ridelist.loc[weekrides + i] = [sh, dur, dis, 0, 1]
+            
+            dur = self.__reverse_lognormal_cdf(self.duration_mu, self.duration_sigma, u_duration)
+            dis = self.__reverse_lognormal_cdf(self.distance_mu, self.distance_sigma, u_distance) # <--- CHANGED
+            
+            ridelist.loc[weekrides + i] = [sh, dur, dis, 1]
+            
         return ridelist

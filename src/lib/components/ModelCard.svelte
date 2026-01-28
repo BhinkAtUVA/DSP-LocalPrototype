@@ -17,18 +17,20 @@
     } = $props()
 </script>
 
-<div class="bg-stone-200 px-6 py-8 rounded-2xl">
+<div class="bg-stone-200 px-6 py-8 rounded-2xl flex flex-col">
     <h3 class="font-bold text-sm uppercase">Price</h3>
     <p><span class="3xl">{hourprice.toFixed(2)} €</span> per hour</p>
     <p><span class="3xl">{kmprice.toFixed(2)} €</span> per kilometer</p>
     <p><span class="3xl">{baseprice.toFixed(2)} €</span> membership fee</p>
-    <h3 class="mt-4 font-bold text-sm uppercase">Discounts</h3>
-    <div class="grid grid-cols-[2fr_1fr] gap-x-4 gap-y-2">
-        {#each discounts as d}
-            <p>{d.description}</p>
-            <p>{d.amount} %</p>
-        {/each}
-    </div>
+    {#if discounts.length > 0}
+        <h3 class="mt-4 font-bold text-sm uppercase">Discounts</h3>
+        <div class="grid grid-cols-[2fr_1fr] gap-x-4 gap-y-2">
+            {#each discounts as d}
+                <p>{d.description}</p>
+                <p>{d.amount} %</p>
+            {/each}
+        </div>
+    {/if}
     <h3 class="mt-4 font-bold text-sm uppercase">Characteristics</h3>
     <div class="grid grid-cols-[2fr_1fr] gap-x-4 gap-y-2">
         {#each characteristics as c}
@@ -44,5 +46,7 @@
             </div>
         {/each}
     </div>
-    <Button class="mt-4 w-full" {onclick}>Details</Button>
+    <div class="flex-1 flex items-end mt-4">
+        <Button class="w-full" {onclick}>Details</Button>
+    </div>
 </div>
